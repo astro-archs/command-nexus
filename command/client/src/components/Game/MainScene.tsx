@@ -3,6 +3,11 @@ import * as BABYLON from '@babylonjs/core';
 import '@babylonjs/loaders';
 import CommandNexusGUI from './UI';
 import { WeatherSystem } from './Weather';
+import Skybox from './Skybox';
+import { Color4 } from '@babylonjs/core';
+import { HexGrid, TerrainType, type HexData } from './TerrainMap';
+// import HexagonalTerrainMap from './TerrainMap';
+
 
 // Loading Screen Component
 const LoadingScreen: React.FC<{ progress: number; status: string }> = ({ progress, status }) => (
@@ -74,6 +79,20 @@ const MainScene: React.FC = () => {
       
       const scene = new BABYLON.Scene(engine);
       sceneRef.current = scene;
+      scene.clearColor = new Color4(0.2, 0.2, 0.2, 1);
+      
+
+      const gl = engine._gl;
+
+
+
+    // const skybox = new Skybox("textures/skybox/mountain/",gl);
+
+    // gl.enable(gl.DEPTH_TEST);
+    // gl.enable(gl.BLEND);
+ 
+
+
       
       setLoadingStatus('Configuring camera...');
       setLoadingProgress(30);
@@ -106,6 +125,7 @@ const MainScene: React.FC = () => {
       // Set zoom limits with increased range
       camera.lowerRadiusLimit = MIN_ZOOM;
       camera.upperRadiusLimit = MAX_ZOOM;
+      camera.position = new BABYLON.Vector3(1.297781854469696,12.935054148614336,0.011680352061435906)
       
       cameraRef.current = camera;
       
@@ -220,27 +240,75 @@ const MainScene: React.FC = () => {
       groundMaterial.diffuseColor = new BABYLON.Color3(0.4, 0.4, 0.4);
       groundMaterial.specularColor = new BABYLON.Color3(0, 0, 0);
       ground.material = groundMaterial;
+      ground.position.y = -0.5;
+
+
+      scene.onBeforeRenderObservable.add(() => {
+        console.log(camera.position)
       
-      setLoadingStatus('Loading 3D model...');
+      })
+      
+      setLoadingStatus('Loading ...');
       setLoadingProgress(70);
       
       // Load GLB model with progress tracking
       try {
-        const result = await BABYLON.SceneLoader.ImportMeshAsync("", "/models/", "port.glb", scene, (progress) => {
-          // Update progress during model loading
-          const modelProgress = 70 + (progress.loaded / progress.total) * 20;
-          setLoadingProgress(modelProgress);
+        
+
+        const hexGrid = new HexGrid(scene, {
+            hexSize: 1,
+            gridWidth: 30,
+            gridHeight: 30,
+            hexHeight: 0.2,
+            generateTerrain: true,
+            noiseScale: 0.15,
+            waterLevel: -0.2,
+            mountainLevel: 0.4,
+            onHexClick: (hexData: HexData, event: BABYLON.IMouseEvent) => {
+                console.log(`Clicked ${hexData.userData.terrainType} at (${hexData.q}, ${hexData.r})`);
+                console.log(`Elevation: ${hexData.userData.elevation?.toFixed(2)}`);
+            },
+            onHexHover: (hexData: HexData, event: BABYLON.IMouseEvent) => {
+                console.log(`Hovering over ${hexData.userData.terrainType}`);
+            }
         });
+
+        hexGrid.createGrid();
+
+
+        // Get all water hexes
+        const waterHexes = hexGrid.getHexesByTerrainType(TerrainType.DEEP_WATER);
+
+        // Manually set terrain for specific hex
+        hexGrid.setHexTerrain(0, 0, TerrainType.MOUNTAIN);
+
+                // Create and place a tree
+        const tree = hexGrid.createTreeMesh("myTree");
+        hexGrid.addMeshToHex(5, 3, tree);
+
+        const numberOfTrees = 10
+
+        const spriteManagerTrees = new BABYLON.SpriteManager("treesManager", "textures/palm.png", 2000, {width: 512, height: 1024},scene);
+        const treeR = new BABYLON.Sprite("tree", spriteManagerTrees);
+        treeR.width = 1;
+        treeR.height = 2;
+
+
+        hexGrid.addTreesToHex(5, 3, treeR, numberOfTrees);
+
         
-        if (result.meshes.length > 0) {
-          // Position the model
-          const rootMesh = result.meshes[0];
-          rootMesh.position = new BABYLON.Vector3(0, 0, 0);
-          rootMesh.scaling = new BABYLON.Vector3(1, 1, 1);
-          
-          console.log("GLB model loaded successfully!", result);
-        }
-        
+
+        // Place with offset
+        const building = hexGrid.createBuildingMesh("town_hall");
+        hexGrid.addMeshToHex(0, 0, building, new BABYLON.Vector3(0.2, 0, 0.1));
+
+        // Auto-populate terrain with appropriate meshes
+        const forestHexes = hexGrid.getHexesByTerrainType(TerrainType.FOREST);
+        forestHexes.forEach(hex => {
+            const tree = hexGrid.createTreeMesh(`tree_${hex.q}_${hex.r}`);
+            hexGrid.addMeshToHex(hex.q, hex.r, tree);
+        });
+
         setLoadingStatus('Model loaded successfully!');
         setLoadingProgress(90);
         
